@@ -1,0 +1,5 @@
+D:\Sistemas\CSharpUtils\Utils\bin\Debug\Utils.dll
+D:\Sistemas\CSharpUtils\Utils\bin\Debug\Utils.pdb
+D:\Sistemas\CSharpUtils\Utils\obj\Debug\Utils.csprojAssemblyReference.cache
+D:\Sistemas\CSharpUtils\Utils\obj\Debug\Utils.dll
+D:\Sistemas\CSharpUtils\Utils\obj\Debug\Utils.pdb
