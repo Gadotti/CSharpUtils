@@ -67,7 +67,7 @@ namespace Utils.Security
                                       .TransformFinalBlock(cipherText, 0, cipherText.Length);
                 return Encoding.UTF8.GetString(plainText);
             }
-        }
+        }  
 
         private static void KeyAndVectorValidation(string key, string vector)
         {
