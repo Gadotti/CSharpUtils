@@ -5,6 +5,7 @@ Utils/bin/Debug/
 Utils/obj
 Utils.Test/bin/
 Utils.Test/obj/
+.vs/
 .vs/CSharpUtils/v16/.suo
 *.ide-shm
 *.dll
