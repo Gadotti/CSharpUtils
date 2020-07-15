@@ -74,7 +74,7 @@ namespace Utils.Security
             if (string.IsNullOrEmpty(key))
             {
                 throw new ArgumentNullException(key);
-            }
+            } 
 
             if (string.IsNullOrEmpty(vector))
             {
