@@ -2,40 +2,49 @@
 using System.Text;
 using System.Security.Cryptography;
 
+
 namespace Utils.Security
 {
-    public static class Encryption
+    public class Encryption
     {
+        public struct EncryptData
+        {
+            public string EncryptedData { get; set; }
+            public string AuthTag { get; set; }
+        }
+
         /// <summary>
-        /// Rijndael symetric encryptation based
-        /// KeySize: 256
+        /// AES/GCM symetric encryptation based
+        /// BlockSize: 128
         /// </summary>
         /// <param name="info"></param>
         /// <returns>Returns encrypted information converted in base64</returns>
-        public static string Encrypt(string info, string key, string vector)
+        public static EncryptData Encrypt(string info, string key, string vector)
         {
             KeyAndVectorValidation(key, vector);
 
             if (string.IsNullOrEmpty(info))
             {
-                return info;
+                return new EncryptData();
             }
 
-            byte[] result;
-            var plainText = Encoding.UTF8.GetBytes(info);
+            var plainBytes = Encoding.UTF8.GetBytes(info);
+            var keyBytes = Encoding.UTF8.GetBytes(key);
+            var vectorBytes = Encoding.UTF8.GetBytes(vector);
+            var authTag = new byte[16]; //it will generate automatically and has to be the same to decrypt
 
-            using (var rijndael = new RijndaelManaged())
+            var result = new byte[plainBytes.Length];
+
+            using (var aesGcm = new AesGcm(keyBytes))
             {
-                rijndael.KeySize = 256;
-                rijndael.BlockSize = 128;
-                rijndael.Mode = CipherMode.CBC;
-                rijndael.Padding = PaddingMode.ISO10126;
-                result = rijndael.CreateEncryptor(Encoding.UTF8.GetBytes(key),
-                                                  Encoding.UTF8.GetBytes(vector))
-                                       .TransformFinalBlock(plainText, 0, plainText.Length);
+                aesGcm.Encrypt(vectorBytes, plainBytes, result, authTag);
             }
 
-            return Convert.ToBase64String(result);
+            return new EncryptData()
+            {
+                EncryptedData = Convert.ToBase64String(result),
+                AuthTag = Convert.ToBase64String(authTag)
+            };
         }
 
         /// <summary>
@@ -44,37 +53,47 @@ namespace Utils.Security
         /// </summary>
         /// <param name="info">Encrypted info in base64 format</param>
         /// <returns>return the plain text information</returns>
-        public static string Decrypt(string info, string key, string vector)
+        public static string Decrypt(string encryptedData, string key, string vector, string authTag)
         {
-            if (string.IsNullOrEmpty(info))
+            if (string.IsNullOrEmpty(encryptedData))
             {
-                return info;
+                return encryptedData;
             }
 
-            var padL = info.Length + (info.Length % 4);
-            info = info.PadRight(padL, '=');
+            KeyAndVectorValidation(key, vector);
 
-            var cipherText = Convert.FromBase64String(info);
-
-            using (var rijndael = new RijndaelManaged())
+            if (string.IsNullOrEmpty(authTag))
             {
-                rijndael.KeySize = 256;
-                rijndael.BlockSize = 128;
-                rijndael.Mode = CipherMode.CBC;
-                rijndael.Padding = PaddingMode.ISO10126;
-                var plainText = rijndael.CreateDecryptor(Encoding.UTF8.GetBytes(key),
-                                                         Encoding.UTF8.GetBytes(vector))
-                                      .TransformFinalBlock(cipherText, 0, cipherText.Length);
-                return Encoding.UTF8.GetString(plainText);
+                throw new ArgumentNullException(authTag);
             }
-        }   
+
+            var padL = encryptedData.Length + (encryptedData.Length % 4);
+            var info = encryptedData.PadRight(padL, '=');
+            var cipherBytes = Convert.FromBase64String(info);
+
+
+            padL = authTag.Length + (authTag.Length % 4);
+            info = authTag.PadRight(padL, '=');
+            var authTagBytes = Convert.FromBase64String(info);
+
+            var keyBytes = Encoding.UTF8.GetBytes(key);
+            var vectorBytes = Encoding.UTF8.GetBytes(vector);            
+
+            byte[] decryptedBytes = new byte[cipherBytes.Length];
+            using (var aesGcm = new AesGcm(keyBytes))
+            {
+                aesGcm.Decrypt(vectorBytes, cipherBytes, authTagBytes, decryptedBytes);
+            }
+
+            return Encoding.UTF8.GetString(decryptedBytes);
+        }
 
         private static void KeyAndVectorValidation(string key, string vector)
         {
             if (string.IsNullOrEmpty(key))
             {
                 throw new ArgumentNullException(key);
-            } 
+            }
 
             if (string.IsNullOrEmpty(vector))
             {
@@ -86,11 +105,10 @@ namespace Utils.Security
                 throw new ArgumentOutOfRangeException(key, "Key must have 16, 24 or 32 bytes");
             }
 
-            if (vector.Length != 16)
+            if (vector.Length != 12)
             {
-                throw new ArgumentOutOfRangeException(vector, "Vector must have 16 bytes");
+                throw new ArgumentOutOfRangeException(vector, "Vector must have 12 bytes");
             }
         }
-
     }
 }

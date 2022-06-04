@@ -1,0 +1,424 @@
+
+** Lib DotNetZip
+
+        /// <summary>
+        /// Realiza a compactação de um único arquivo e o protege com uma senha
+        /// </summary>
+        /// <param name="data">Array de bytes do arquivo a ser compactado</param>
+        /// <param name="dataFileName">Nome do arquivo a ser compactado</param>
+        /// <param name="password">Senha de acesso para o arquivo</param>
+        /// <returns>Retorna o arquivo compactado em forma de array de bytes</returns>
+        public static byte[] GetZipWithPassword(byte[] data, string dataFileName, string password)
+        {
+            if (data == null || data.Length == 0)
+            {
+                throw new ArgumentNullException("data");
+            }
+
+            if (string.IsNullOrEmpty(dataFileName))
+            {
+                throw new ArgumentNullException("dataFileName");
+            }
+
+            if (string.IsNullOrEmpty(password))
+            {
+                throw new ArgumentNullException("password");
+            }
+
+            using (var stream = new MemoryStream(data))
+            using (var zip = new Ionic.Zip.ZipFile())
+            {
+                zip.Password = password;
+                zip.AddEntry(dataFileName, stream);
+
+                using (var ms = new MemoryStream())
+                {
+                    zip.Save(ms);
+                    return ms.ToArray();
+                }
+            }
+        }
+
+
+ ----------------
+
+    internal static void KeyAndVectorValidation(string key, string vector)
+    {
+        if (string.IsNullOrEmpty(key))
+        {
+            throw new ArgumentNullException(key);
+        }
+
+        if (string.IsNullOrEmpty(vector))
+        {
+            throw new ArgumentNullException(vector);
+        }
+
+        if (key.Length != 16 && key.Length != 24 && key.Length != 32)
+        {
+            throw new ArgumentOutOfRangeException(key, "Key must have 16, 24 or 32 bytes");
+        }
+
+        if (vector.Length != 16)
+        {
+            throw new ArgumentOutOfRangeException(vector, "Vector must have 16 bytes");
+        }
+    }
+
+--------------------------
+
+        /// <summary>
+        /// Transforma o arquivo representado em array de byte em uma representação criptografada de array de byte
+        /// </summary>
+        /// <param name="fileData">Arquivo original</param>
+        /// <returns>Arquivo criptografado em array de bytes</returns>
+        public static byte[] FileEncrypt(byte[] fileData, string key, string vector)
+        {
+            Miscellaneous.Security.KeyAndVectorValidation(key, vector);
+
+            byte[] result;
+            using (var algoritmo = Rijndael.Create())
+            {
+                algoritmo.Key = Encoding.UTF8.GetBytes(key);
+                algoritmo.IV = Encoding.UTF8.GetBytes(vector);
+
+                ICryptoTransform encryptor = algoritmo.CreateEncryptor(algoritmo.Key, algoritmo.IV);
+
+                using (var memoryStream = new MemoryStream())
+                using (var cryptoStream = new CryptoStream(memoryStream, encryptor, CryptoStreamMode.Write))
+                {
+                    cryptoStream.Write(fileData, 0, fileData.Length);
+                    cryptoStream.FlushFinalBlock();
+
+                    result = memoryStream.ToArray();
+                }
+            }
+
+            return result;
+        }
+
+        public static byte[] FileDecrypt(byte[] fileData, string key, string vector)
+        {
+            Miscellaneous.Security.KeyAndVectorValidation(key, vector);
+
+            var buffer = new byte[fileData.Length];
+            using (Rijndael algoritmo = Rijndael.Create())
+            {
+                algoritmo.Key = Encoding.UTF8.GetBytes(key);
+                algoritmo.IV = Encoding.UTF8.GetBytes(vector);
+
+                ICryptoTransform decryptor = algoritmo.CreateDecryptor(algoritmo.Key, algoritmo.IV);
+
+                using (var memoryStream = new MemoryStream(fileData))
+                using (var cryptoStream = new CryptoStream(memoryStream, decryptor, CryptoStreamMode.Read))
+                {
+                    var length = cryptoStream.Read(buffer, 0, buffer.Length);
+                    var result = new byte[length];
+                    Array.Copy(buffer, 0, result, 0, length);
+                    return result;
+                }
+            }
+        }
+
+-----------
+
+
+const PaddingMode DEFAULT_PADDING_MODE = PaddingMode.ISO10126;
+
+        public static string Encrypt(string info, string key = "", string vector = "", bool throwExceptionOnError = true)
+        {
+            return Encrypt(info, DEFAULT_PADDING_MODE, key, vector, throwExceptionOnError);
+        }
+        /// <param name="paddingMode">
+        /// Usado somente para chave de 32 bytes. Valor padrâo: ISO10126
+        /// </param>
+        public static string Encrypt(string info, PaddingMode paddingMode, string key = "", string vector = "", bool throwExceptionOnError = true)
+        {
+            if (string.IsNullOrEmpty(info))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                byte[] retorno;
+
+                //Verifica o tipo de chave a ser utilizada. 16 ou 32 bytes
+                if (key.Length <= 16)
+                {
+                    using (var algoritmo = Rijndael.Create())
+                    {
+                        algoritmo.Key = Encoding.UTF8.GetBytes(string.IsNullOrEmpty(key) ? "KmTJuOxDghn3o1jN" : key);
+                        algoritmo.IV = Encoding.UTF8.GetBytes(string.IsNullOrEmpty(vector) ? "gy1XOn77bV5K1fld" : vector);
+
+                        ICryptoTransform encryptor = algoritmo.CreateEncryptor(algoritmo.Key, algoritmo.IV);
+
+                        using (var memoryStream = new MemoryStream())
+                        {
+                            using (var cryptoStream = new CryptoStream(memoryStream, encryptor, CryptoStreamMode.Write))
+                            {
+                                using (var streamWriter = new StreamWriter(cryptoStream))
+                                {
+                                    streamWriter.Write(info);
+                                }
+                                retorno = memoryStream.ToArray();
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    //Chave de 32 bytes
+                    byte[] plainText = Encoding.UTF8.GetBytes(info);
+                    using (RijndaelManaged rmt = new RijndaelManaged())
+                    {
+                        rmt.KeySize = 256;
+                        rmt.BlockSize = 128;
+                        rmt.Mode = CipherMode.CBC;
+                        rmt.Padding = paddingMode;
+                        retorno = rmt.CreateEncryptor(Encoding.UTF8.GetBytes(key),
+                                                                Encoding.UTF8.GetBytes(vector))
+                                               .TransformFinalBlock(plainText, 0, plainText.Length);
+                    }
+                }
+
+                return Convert.ToBase64String(retorno);
+            }
+            catch (Exception)
+            {
+                if (throwExceptionOnError)
+                {
+                    throw;
+                }
+            }
+
+            return string.Empty;
+        }
+
+        public static string Decrypt(string info, string key = "", string vector = "", bool throwExceptionOnError = true)
+        {
+            return Decrypt(info, DEFAULT_PADDING_MODE, key, vector, throwExceptionOnError);
+        }
+        /// <param name="paddingMode">
+        /// Usado somente para chave de 32 bytes. Valor padrâo: ISO10126
+        /// </param>
+        public static string Decrypt(string info, PaddingMode paddingMode, string key = "", string vector = "", bool throwExceptionOnError = true)
+        {
+            var retorno = string.Empty;
+
+            try
+            {
+                if (!string.IsNullOrEmpty(info))
+                {
+                    int padL = info.Length + (info.Length % 4);
+                    info = info.PadRight(padL, '=');
+
+                    byte[] cipherText = Convert.FromBase64String(info);
+
+                    //Verifica o tipo de chave a ser utilizada. 16 ou 32 bytes
+                    if (key.Length <= 16)
+                    {
+                        using (Rijndael algoritmo = Rijndael.Create())
+                        {
+                            algoritmo.Key = Encoding.UTF8.GetBytes(string.IsNullOrEmpty(key) ? "KmTJuOxDghn3o1jN" : key);
+                            algoritmo.IV = Encoding.UTF8.GetBytes(string.IsNullOrEmpty(vector) ? "gy1XOn77bV5K1fld" : vector);
+
+                            ICryptoTransform decryptor = algoritmo.CreateDecryptor(algoritmo.Key, algoritmo.IV);
+
+                            using (var memoryStream = new MemoryStream(cipherText))
+                            {
+                                using (var cryptoStream = new CryptoStream(memoryStream, decryptor, CryptoStreamMode.Read))
+                                {
+                                    using (var streamReader = new StreamReader(cryptoStream))
+                                    {
+                                        retorno = streamReader.ReadToEnd();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        //Chave de 32 bytes
+                        using (RijndaelManaged rmt = new RijndaelManaged())
+                        {
+                            rmt.KeySize = 256;
+                            rmt.BlockSize = 128;
+                            rmt.Mode = CipherMode.CBC;
+                            rmt.Padding = paddingMode;
+                            byte[] plainText = rmt.CreateDecryptor(Encoding.UTF8.GetBytes(key),
+                                                                   Encoding.UTF8.GetBytes(vector))
+                                                  .TransformFinalBlock(cipherText, 0, cipherText.Length);
+                            return Encoding.UTF8.GetString(plainText);
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                if (throwExceptionOnError)
+                {
+                    throw;
+                }
+            }
+
+            return retorno;
+        }
+
+-------------------------------------
+
+        /// <summary>
+        /// Gera uma string de 16 caracteres aleatória que pode conter letras maiúsculas, minúsculas e números
+        /// </summary>
+        /// <returns>String de 16 caracteres</returns>
+        public static string GenerateRandomKey()
+        {
+            const string valid = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
+            var res = new StringBuilder();
+            using (var rng = new RNGCryptoServiceProvider())
+            {
+                var uintBuffer = new byte[sizeof(uint)];
+
+                for (int length = 0; length < 16; length++)
+                {
+                    rng.GetBytes(uintBuffer);
+                    uint num = BitConverter.ToUInt32(uintBuffer, 0);
+                    res.Append(valid[(int)(num % (uint)valid.Length)]);
+                }
+            }
+
+            return res.ToString();
+        }
+
+---------
+
+        /// <summary>
+        /// Realiza o split da string utilizando o método Split padrão mas retorna no tipo de array desejado.
+        /// Caso haja alguma conversão que não seja válida, uma exceção será levantada.
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="text"></param>
+        /// <param name="separator"></param>
+        /// <returns></returns>
+        public static T[] SplitTo<T>(this string text, params char[] separator)
+        {
+            return SplitTo<T>(text, separator, StringSplitOptions.None);
+        }
+
+        /// <summary>
+        /// Realiza o split da string utilizando o método Split padrão mas retorna no tipo de array desejado.
+        /// Caso haja alguma conversão que não seja válida, uma exceção será levantada.
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="text"></param>
+        /// <param name="separator"></param>
+        /// <param name="options"></param>
+        /// <returns></returns>
+        public static T[] SplitTo<T>(this string text, char[] separator, StringSplitOptions options)
+        {
+            var result = new List<T>();
+            foreach (var item in text.Split(separator, options))
+            {
+                result.Add((T)Convert.ChangeType(item, typeof(T)));
+            }
+
+            return result.ToArray();
+        }
+
+----------
+
+    public static class HtmlSanitizer
+    {
+        public static string GetSafeHtmlFragment(string html, List<string> allowedCssClasses = null)
+        {
+            var sanitizer = new Ganss.XSS.HtmlSanitizer(allowedCssClasses: allowedCssClasses);
+            sanitizer.KeepChildNodes = true;
+            sanitizer.AllowDataAttributes = true;
+            sanitizer.AllowedSchemes.Add("data");
+
+            if (allowedCssClasses != null && allowedCssClasses.Count > 0)
+            {
+                sanitizer.AllowedAttributes.Add("class");
+            }
+
+            sanitizer.RemovingAttribute += (sanitizerSender, sanitizerEvent) =>
+            sanitizerEvent.Cancel = sanitizerEvent.Reason == Ganss.XSS.RemoveReason.NotAllowedUrlValue
+                                                                && sanitizerEvent.Attribute.Value.Length >= 0xfff0
+                                                                && sanitizerEvent.Attribute.Value.StartsWith("data:", StringComparison.OrdinalIgnoreCase);
+
+            return sanitizer.Sanitize(html);
+        }
+    }
+
+------------------
+
+public static string ComputeSHA512(string text, string salt)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return text;
+            }
+
+            using (var hashTool = new System.Security.Cryptography.SHA512Managed())
+            {
+                byte[] textAsByte;
+                if (string.IsNullOrEmpty(salt))
+                {
+                    textAsByte = Encoding.UTF8.GetBytes(text);
+                }
+                else
+                {
+                    textAsByte = Encoding.UTF8.GetBytes(text + salt);
+                }
+                
+                byte[] encryptedBytes = hashTool.ComputeHash(textAsByte);
+                hashTool.Clear();
+                return Convert.ToBase64String(encryptedBytes);
+            }
+        }
+
+-------------------------------------------
+
+ /// <summary>
+        /// Função para identificar se o arquivo é realmente uma imagem. Identificação através dos 8 primeiros bytes.
+        /// </summary>
+        /// <param name="file">Recebe o arquivo sendo importado</param>
+        /// <returns>Retorna true caso for uma imagem</returns>
+        public static bool IsImage(this byte[] file)
+        {
+            using (Stream fileStream = new MemoryStream(file))
+            {
+                List<string> jpg = new List<string> { "FF", "D8" };
+                List<string> bmp = new List<string> { "42", "4D" };
+                List<string> gif = new List<string> { "47", "49", "46" };
+                List<string> png = new List<string> { "89", "50", "4E", "47", "0D", "0A", "1A", "0A" };
+                List<List<string>> imgTypes = new List<List<string>> { jpg, bmp, gif, png };
+
+                List<string> bytesIterated = new List<string>();
+                bool isImage = false;
+                for (int i = 0; i < 8; i++)
+                {
+                    bytesIterated.Add(fileStream.ReadByte().ToString("X2"));
+                    isImage = imgTypes.Any(img => !img.Except(bytesIterated).Any());
+                }
+                return isImage;
+            }
+        }
+
+        private const string hashDBFile = "LgmX+df4eTB3pjFuGp0RkaHYo+4=";
+        private const int bytesToViewhash = 24;
+        public static bool IsDBFile(this byte[] file)
+        {
+            if (file.Length >= bytesToViewhash)
+            {
+                string hash = string.Empty;
+                using (SHA1CryptoServiceProvider sha1 = new SHA1CryptoServiceProvider())
+                {
+                    hash = Convert.ToBase64String(sha1.ComputeHash(file.ToList<byte>().GetRange(0, bytesToViewhash).ToArray()));
+                }
+                return hashDBFile.Equals(hash);
+            }
+            return false;
+        }       
+
+------------------------------------------
