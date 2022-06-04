@@ -48,8 +48,8 @@ namespace Utils.Security
         }
 
         /// <summary>
-        /// Rijndael symetric encryptation based
-        /// KeySize: 256
+        /// AES/GCM symetric encryptation based
+        /// BlockSize: 128
         /// </summary>
         /// <param name="info">Encrypted info in base64 format</param>
         /// <returns>return the plain text information</returns>
